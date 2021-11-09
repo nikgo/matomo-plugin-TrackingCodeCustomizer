@@ -31,7 +31,10 @@ namespace Piwik\Plugins\TrackingCodeCustomizer;
 class TrackingCodeCustomizer extends \Piwik\Plugin
 {
     private static $hooks = array(
-            'Tracker.getJavascriptCode' => 'applyTrackingCodeCustomizations'
+            'Tracker.getJavascriptCode' => 'applyTrackingCodeCustomizations',
+            'API.SitesManager.getJavascriptTag.end' => 'rewriteJavascriptTag',
+            'Controller.SitesManager.siteWithoutData.end' => 'rewriteJavascriptTag',
+            'API.SitesManager.getImageTrackingCode.end' => 'rewriteJavascriptTag'
         );
     
     public function registerEvents()
@@ -59,29 +62,29 @@ class TrackingCodeCustomizer extends \Piwik\Plugin
     public function applyTrackingCodeCustomizations(&$sysparams,$parameters){
         
         $originalSysparams = $sysparams;
-        
         $storedSettings = $this->getSettings();
-        
-        if(array_key_exists("options", $storedSettings))
-                $storedSettings["options"] .= $sysparams["options"];
+              
+        if(array_key_exists("options", $storedSettings)) {
+            $storedSettings["options"] .= $sysparams["options"];
+        }
 
-        if(array_key_exists("optionsBeforeTrackerUrl", $storedSettings))
-                $storedSettings["optionsBeforeTrackerUrl"] .=$sysparams["optionsBeforeTrackerUrl"];
-        
-        $sysparams = array_merge($sysparams,$storedSettings);
+        if(array_key_exists("optionsBeforeTrackerUrl", $storedSettings)) {
+            $storedSettings["optionsBeforeTrackerUrl"] .= $sysparams["optionsBeforeTrackerUrl"];
+        }
+
+        $sysparams = array_merge($sysparams, $storedSettings);
         
         foreach($sysparams as $key => $value){
-            
             $sysparams[$key] =  $this->replaceTokens($value,$originalSysparams,$sysparams);
         }
     
     }
-    
+
     private function getSettings()
     {
         $outParams = array();
         
-        $params = array("idSite","piwikUrl","options","optionsBeforeTrackerUrl","httpsPiwikUrl","protocol");
+        $params = array("idSite","piwikUrl","options","optionsBeforeTrackerUrl","httpsPiwikUrl","protocol","piwikJs", "piwikPhp","paqVariable","removePiwikBranding");
         
         $settings = new SystemSettings();
         
@@ -97,10 +100,43 @@ class TrackingCodeCustomizer extends \Piwik\Plugin
                 
         return $outParams;
     }
-    
+
+    /**
+     * @param $subject
+     * @param $originalSysparams
+     * @param $sysparams
+     * @return mixed
+     */
     private function replaceTokens($subject,$originalSysparams,$sysparams){
         $output = str_replace(array_map(function($item){return '{$original_'.$item.'}';},array_keys($originalSysparams)),array_values($originalSysparams),$subject);
         $output = str_replace(array_map(function($item){return '{$'.$item.'}';},array_keys($sysparams)),array_values($sysparams),$output);
         return $output;
+    }
+
+
+    /**
+     * @param $result
+     * @param $parameters
+     */
+    public function rewriteJavascriptTag(&$result, $parameters) {
+
+        $settings = $this->getSettings();
+
+        if(array_key_exists("paqVariable", $settings)) {
+            $result = str_replace("_paq", $settings["paqVariable"], $result);
+        }
+
+        if(array_key_exists("piwikJs", $settings)) {
+            $result = str_replace("piwik.js", $settings["piwikJs"], $result);
+        }
+
+        if(array_key_exists("piwikPhp", $settings)) {
+            $result = str_replace("piwik.php", $settings["piwikPhp"], $result);
+        }
+
+        if(array_key_exists("removePiwikBranding", $settings)) {
+            $result = preg_replace('/&lt;\!\-\- .*\-\-&gt;/', '', $result);
+            $result = preg_replace('/<\!\-\- .*\-\->/', '', $result);
+        }
     }
 }
